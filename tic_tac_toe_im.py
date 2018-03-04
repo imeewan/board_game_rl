@@ -1,453 +1,488 @@
-# https://deeplearningcourses.com/c/artificial-intelligence-reinforcement-learning-in-python
-# https://www.udemy.com/artificial-intelligence-reinforcement-learning-in-python
-# Simple reinforcement learning algorithm for learning tic-tac-toe
-# Use the update rule: V(s) = V(s) + alpha*(V(s') - V(s))
-# Use the epsilon-greedy policy:
-#   action|s = argmax[over all actions possible from state s]{ V(s) }  if rand > epsilon
-#   action|s = select random action from possible actions from state s if rand < epsilon
-#
-#
-# INTERESTING THINGS TO TRY:
-#
-# Currently, both agents use the same learning strategy while they play against each other.
-# What if they have different learning rates?
-# What if they have different epsilons? (probability of exploring)
-#   Who will converge faster?
-# What if one agent doesn't learn at all?
-#   Poses an interesting philosophical question: If there's no one around to challenge you,
-#   can you reach your maximum potential?
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Feb 24 04:03:47 2018
 
+@author: Ittipat
+"""
+
+# Tic Tac Toe
+
+import random
 import numpy as np
-import matplotlib.pyplot as plt
 
-LENGTH = 3
+x = 1 
+o = 2
 
+def state2board(state):
+    board = (np.random.randn(9, 1) + 0.5) / 1000000
+    for i in range(9):
+        v = state % 3
+        state = state // 3
+        if v == 0:
+          board[i] = 0
+        elif v == 1:
+          board[i] = 1
+        elif v == 2:
+          board[i] = 2
 
-class Agent:
-  def __init__(self, eps=0.1, alpha=0.5):
-    self.eps = eps # probability of choosing random action instead of greedy
-    self.alpha = alpha # learning rate
-    self.verbose = False
-    self.state_history = []
-  
-  def setV(self, V):
-    self.V = V
+    return board
 
-  def set_symbol(self, sym):
-    self.sym = sym
-
-  def set_verbose(self, v):
-    # if true, will print values for each position on the board
-    self.verbose = v
-
-  def reset_history(self):
-    self.state_history = []
-
-  def take_action(self, env):
-    # choose an action based on epsilon-greedy strategy
-    r = np.random.rand()
-    best_state = None
-    if r < self.eps:
-      # take a random action
-      if self.verbose:
-        print("Taking a random action")
-
-      possible_moves = []
-      for i in range(LENGTH):
-        for j in range(LENGTH):
-          if env.is_empty(i, j):
-            possible_moves.append((i, j))
-      idx = np.random.choice(len(possible_moves))
-      next_move = possible_moves[idx]
-    else:
-      # choose the best action based on current values of states
-      # loop through all possible moves, get their values
-      # keep track of the best value
-      pos2value = {} # for debugging
-      next_move = None
-      best_value = -1
-      for i in range(LENGTH):
-        for j in range(LENGTH):
-          if env.is_empty(i, j):
-            # what is the state if we made this move?
-            env.board[i,j] = self.sym
-            state = env.get_state()
-            env.board[i,j] = 0 # don't forget to change it back!
-            pos2value[(i,j)] = self.V[state]
-            if self.V[state] > best_value:
-              best_value = self.V[state]
-              best_state = state
-              next_move = (i, j)
-
-      # if verbose, draw the board w/ the values
-      if self.verbose:
-        print("Taking a greedy action")
-        for i in range(LENGTH):
-          print("-----------------")
-          for j in range(LENGTH):
-            if env.is_empty(i, j):
-              # print the value
-              print("{}|".format(pos2value[(i,j)]),  end=' ')
-            else:
-              print(" ",  end=' ')
-              if env.board[i,j] == env.x:
-                print("x |",  end=' ')
-              elif env.board[i,j] == env.o:
-                print("o |",  end=' ')
-              else:
-                print("  |",  end=' ')
-          print("")
-        print("-----------------")
-
-    # make the move
-    env.board[next_move[0], next_move[1]] = self.sym
-
-  def update_state_history(self, s):
-    # cannot put this in take_action, because take_action only happens
-    # once every other iteration for each player
-    # state history needs to be updated every iteration
-    # s = env.get_state() # don't want to do this twice so pass it in
-    self.state_history.append(s)
-
-  def update(self, env):
-    # we want to BACKTRACK over the states, so that:
-    # V(prev_state) = V(prev_state) + alpha*(V(next_state) - V(prev_state))
-    # where V(next_state) = reward if it's the most current state
-    #
-    # NOTE: we ONLY do this at the end of an episode
-    # not so for all the algorithms we will study
-    reward = env.reward(self.sym)
-    target = reward
-    for prev in reversed(self.state_history):
-      value = self.V[prev] + self.alpha*(target - self.V[prev])
-      self.V[prev] = value
-      target = value
-    self.reset_history()
-
-
-# this class represents a tic-tac-toe game
-# is a CS101-type of project
-class Environment:
-  def __init__(self):
-    self.board = np.zeros((LENGTH, LENGTH))
-    self.x = -1 # represents an x on the board, player 1
-    self.o = 1 # represents an o on the board, player 2
-    self.winner = None
-    self.ended = False
-    self.num_states = 3**(LENGTH*LENGTH)
-
-  def is_empty(self, i, j):
-    return self.board[i,j] == 0
-
-  def reward(self, sym):
-    # no reward until game is over
-    if not self.game_over():
-      return 0
-
-    # if we get here, game is over
-    # sym will be self.x or self.o
-    return 1 if self.winner == sym else 0
-
-  def get_state(self):
-    # returns the current state, represented as an int
-    # from 0...|S|-1, where S = set of all possible states
-    # |S| = 3^(BOARD SIZE), since each cell can have 3 possible values - empty, x, o
-    # some states are not possible, e.g. all cells are x, but we ignore that detail
-    # this is like finding the integer represented by a base-3 number
-    
+def board2state(board):
     """h = v * (3 ** k)"""
-    k = 0
     h = 0
-    for i in range(LENGTH):
-      for j in range(LENGTH):
-        if self.board[i,j] == 0:
-          v = 0
-        elif self.board[i,j] == self.x:
-          v = 1
-        elif self.board[i,j] == self.o:
-          v = 2
+    k = 0
+    v = 0
+    for i in range(len(board)):
+        if board[i] == 0:
+            v = 0
+        elif board[i] == x:
+            v = 1
+        elif board[i] == o:
+            v = 2
         h += (3**k) * v
         k += 1
     return h
 
-  def game_over(self, force_recalculate=False):
-    # returns true if game over (a player has won or it's a draw)
-    # otherwise returns false
-    # also sets 'winner' instance variable and 'ended' instance variable
-    if not force_recalculate and self.ended:
-      return self.ended
+def drawboard(board):
     
-    # check rows
-    for i in range(LENGTH):
-      for player in (self.x, self.o):
-        if self.board[i].sum() == player*LENGTH:
-          self.winner = player
-          self.ended = True
-          return True
-
-    # check columns
-    for j in range(LENGTH):
-      for player in (self.x, self.o):
-        if self.board[:,j].sum() == player*LENGTH:
-          self.winner = player
-          self.ended = True
-          return True
-
-    # check diagonals
-    for player in (self.x, self.o):
-      # top-left -> bottom-right diagonal
-      if self.board.trace() == player*LENGTH:
-        self.winner = player
-        self.ended = True
-        return True
-      # top-right -> bottom-left diagonal
-      if np.fliplr(self.board).trace() == player*LENGTH:
-        self.winner = player
-        self.ended = True
-        return True
-
-    # check if draw
-    if np.all((self.board == 0) == False):
-      # winner stays None
-      self.winner = None
-      self.ended = True
-      return True
-
-    # game is not over
-    self.winner = None
-    return False
-
-  def is_draw(self):
-    return self.ended and self.winner is None
-
-  # Example board
-  # -------------
-  # | x |   |   |
-  # -------------
-  # |   |   |   |
-  # -------------
-  # |   |   | o |
-  # -------------
-  def draw_board(self):
-    for i in range(LENGTH):
-      print("-------------")
-      for j in range(LENGTH):
-        print(" ",  end=' ')
-        if self.board[i,j] == self.x:
-          print("x",  end=' ')
-        elif self.board[i,j] == self.o:
-          print("o", end=' ')
+    board_str = []
+    for i in range(9):
+        if board[i] == 0:
+            board_str.append(' ')
+        elif board[i] == 1:
+            board_str.append('X')
         else:
-          print(" ", end=' ')
-      print("")
-    print("-------------")
+            board_str.append('O')
+
+    print( '|', board_str[6], '|', board_str[7], '|', board_str[8],  '|')
+    print( '|', board_str[3], '|', board_str[4], '|', board_str[5],  '|')
+    print( '|', board_str[0], '|', board_str[1], '|', board_str[2],  '|')
+
+def winner(board, x):
+    # Given a board and a player's letter, this function returns True if that player has won.
+    # We use bo instead of board and le instead of letter so we don't have to type as much.
+    results = ((board[6] == x and board[7] == x and board[8] == x) or # across the top
+    (board[3] == x and board[4] == x and board[5] == x) or # across the middle
+    (board[0] == x and board[1] == x and board[2] == x) or # across the bottom
+    (board[6] == x and board[3] == x and board[0] == x) or # down the left side
+    (board[7] == x and board[4] == x and board[1] == x) or # down the middle
+    (board[8] == x and board[5] == x and board[2] == x) or # down the right side
+    (board[6] == x and board[4] == x and board[2] == x) or # diagonal
+    (board[8] == x and board[4] == x and board[0] == x)) # diagonal
+    return results
+    
+def draw(board, x, o):
+    if end_game(board):
+        results = winner(board, x) == False or winner(board, o) == False
+    else:
+        results = False
+                
+    return results
+    
+def end_game(board):
+    results = False
+    if winner(board, x) or winner(board, o):
+        results = True
+    elif all(board != 0):
+        results = True
+    return results
+    
+
+def clear(board):
+    state_temp = 0
+    return state2board(state_temp)
+
+#class Agent:
+#    def __init__(self, state_score, state_his, eps=0.1, alpha=0.5, sym):
+#        self.score = np.zeros(3 ** 9)
+#        self.state_his = []
+#        self.eps = eps
+#        self.alpha = alpha
+#        self.sym = sym
+
+def make_score():
+    return np.zeros((3 ** 9, 2))
+
+def state_score(state_n, score):
+    return score[state_n]
+    
+def take_action(board, sym, eps, score):
+    winner_p = None
+    if end_game(board) == False:
+        global next_move
+        next_move = None
+        available_state = []
+        available_state_score = []
+        global state
+        state = board2state(board)
+        board2 = state2board(state)
+        for i in range(9):
+            if board[i] == 0:
+                board2[i] = sym
+                available_statei = board2state(board2)
+                available_state_scorei = state_score(board2state(board2), score)
+                available_state.append(available_statei)
+                available_state_score.append(available_state_scorei)
+#                drawboard(board2)
+#                print('_________')
+            board2 = state2board(state)
+
+        r = np.random.rand()
+        if r < eps:
+            j = np.random.choice(len(available_state))
+            k = available_state[j]
+        else:
+            j = np.argmax(available_state_score, axis=0)
+            k = available_state[j[0]]
+        next_move = k
+        state = next_move
+        board = state2board(state)
+    else:
+        if winner(board, o):
+            winner_p = o
+        elif winner(board, x):
+            winner_p = x
+        else:
+            winner_p = 'draw'
+      
+    return board, state, sym, winner_p
+    
+
+def next_play(current_play):
+    if current_play == x:
+        next_play = o
+    else:
+        next_play = x
+    return next_play
+
+def append_his(his, state):
+    his.append(state)
+    
+
+def available_state_num(state):
+    avai_state = []
+    board_n = state2board(state)
+    for i in range(9):
+        if board_n[i] == 0:
+            avai_state.append(i)
+   
+    return len(avai_state)
+    
+    
+    
+
+    
+#def get_available(state)
+
+    
+#state = 2187
+#board = state2board(state)
+#state = board2state(board)
+#drawboard(board)
+
+#xiswinner = winner(board, x)
+#oiswinner = winner(board, o)
+#isdraw = draw(board, x, o)
+#endgame = end_game(board)
+    
+
+#board = clear(board)
+#drawboard(board)
+#board = take_action(board, x, 1)
+#drawboard(board)
+#board = take_action(board, o, 5)
+#drawboard(board) 
+score_all = make_score()
+current_play = x
+lr = 0.001
+
+for i in range(500000):
+    state = 0
+    board = state2board(state)
+    his_1 = []
+    his_2 = []
+    while end_game(board) == False:
+        
+        board, state, current_play, winner_p = take_action(board, current_play, 0.1, score_all[:, (current_play - 1):current_play])    
+        if current_play == x:
+            append_his(his_1, state)
+#            drawboard(board)
+#            print('================')
+
+        elif current_play == o:
+            append_his(his_2, state)
+#            drawboard(board)
+#            print('================')
+        
+        else:
+            print("wrong!!!")
+        
+        current_play = next_play(current_play)
+    
+    his_1 = np.flip(his_1, axis=0)
+    his_2 = np.flip(his_2, axis=0)
+        
+    if winner(board, o):
+        winner_p = o
+        N = np.array(his_2).shape[0]
+        for l in range(N):
+            if l != 0:
+                score_all[:, 1:2][(his_2[l])] += 1 * lr / available_state_num(his_2[l])
+            else:
+                score_all[:, 1:2][(his_2[l])] += 1 * lr / (l + 1)
+                score_all[:, 0:1][(his_2[l])] += - 1 * lr / (l + 1)
+        M = np.array(his_1).shape[0]
+        for l in range(M):
+            if l != 0:
+                score_all[:, 0:1][(his_1[l])] += - 1 * lr / available_state_num(his_1[l])
+            else:
+                score_all[:, 0:1][(his_1[l])] += - 1 * lr / (l + 1) 
+    elif winner(board, x):
+        winner_p = x
+        N = np.array(his_1).shape[0]
+        for l in range(N):
+            if l != 0:
+                score_all[:, 0:1][(his_1[l])] += 1 * lr / available_state_num(his_1[l])
+            else:
+                score_all[:, 0:1][(his_1[l])] += 1 * lr / (l + 1) 
+                score_all[:, 1:2][(his_1[l])] += - 1 * lr / (l + 1)
+
+        M = np.array(his_2).shape[0]
+        for l in range(M):
+            if l != 0:
+                score_all[:, 1:2][(his_2[l])] += - 1 * lr / available_state_num(his_2[l])
+            else:
+                score_all[:, 1:2][(his_2[l])] += - 1 * lr / (l + 1) 
+    else:
+        winner_p = 'draw'
+#    print("winner is : ", winner_p)
+    his_1 = np.flip(his_1, axis=0)
+    his_2 = np.flip(his_2, axis=0)
+    if i % 1000 == 0:
+        print(i)
 
 
 
-class Human:
-  def __init__(self):
-    pass
 
-  def set_symbol(self, sym):
-    self.sym = sym
 
-  def take_action(self, env):
-    while True:
-      # break if we make a legal move
-      move = input("Enter coordinates i,j for your next move (i,j=0..2): ")
-      i, j = move.split(',')
-      i = int(i)
-      j = int(j)
-      if env.is_empty(i, j):
-        env.board[i,j] = self.sym
+
+
+
+
+
+
+current_play = x
+state = 0
+board = state2board(state)
+board, state, current_play, winner_p = take_action(board, current_play, 0, score_all[:, (current_play - 1):current_play]) 
+drawboard(board)
+
+
+score = score_all[:, 0:1]
+
+drawboard(board)
+
+board2state(board)
+drawboard(state2board(19557))
+
+
+board = state2board(1)
+drawboard(board)
+board2state(board)
+score_all[81][0]
+score_all[1][0]
+score_all[9][0]
+score_all[7976][0]
+score_all[10136][0]
+
+
+
+
+
+
+
+
+
+def drawBoard(board):
+    # This function prints out the board that it was passed.
+
+    # "board" is a list of 10 strings representing the board (ignore index 0)
+    print('   |   |')
+    print(' ' + board[7] + ' | ' + board[8] + ' | ' + board[9])
+    print('   |   |')
+    print('-----------')
+    print('   |   |')
+    print(' ' + board[4] + ' | ' + board[5] + ' | ' + board[6])
+    print('   |   |')
+    print('-----------')
+    print('   |   |')
+    print(' ' + board[1] + ' | ' + board[2] + ' | ' + board[3])
+    print('   |   |')
+
+def inputPlayerLetter():
+    # Lets the player type which letter they want to be.
+    # Returns a list with the player's letter as the first item, and the computer's letter as the second.
+    letter = ''
+    while not (letter == 'X' or letter == 'O'):
+        print('Do you want to be X or O?')
+        letter = input().upper()
+
+    # the first element in the tuple is the player's letter, the second is the computer's letter.
+    if letter == 'X':
+        return ['X', 'O']
+    else:
+        return ['O', 'X']
+
+def whoGoesFirst():
+    # Randomly choose the player who goes first.
+    if random.randint(0, 1) == 0:
+        return 'computer'
+    else:
+        return 'player'
+
+def playAgain():
+    # This function returns True if the player wants to play again, otherwise it returns False.
+    print('Do you want to play again? (yes or no)')
+    return input().lower().startswith('y')
+
+def makeMove(board, letter, move):
+    board[move] = letter
+
+def isWinner(bo, le):
+    # Given a board and a player's letter, this function returns True if that player has won.
+    # We use bo instead of board and le instead of letter so we don't have to type as much.
+    return ((bo[7] == le and bo[8] == le and bo[9] == le) or # across the top
+    (bo[4] == le and bo[5] == le and bo[6] == le) or # across the middle
+    (bo[1] == le and bo[2] == le and bo[3] == le) or # across the bottom
+    (bo[7] == le and bo[4] == le and bo[1] == le) or # down the left side
+    (bo[8] == le and bo[5] == le and bo[2] == le) or # down the middle
+    (bo[9] == le and bo[6] == le and bo[3] == le) or # down the right side
+    (bo[7] == le and bo[5] == le and bo[3] == le) or # diagonal
+    (bo[9] == le and bo[5] == le and bo[1] == le)) # diagonal
+
+def getBoardCopy(board):
+    # Make a duplicate of the board list and return it the duplicate.
+    dupeBoard = []
+
+    for i in board:
+        dupeBoard.append(i)
+
+    return dupeBoard
+
+def isSpaceFree(board, move):
+    # Return true if the passed move is free on the passed board.
+    return board[move] == ' '
+
+def getPlayerMove(board):
+    # Let the player type in his move.
+    move = ' '
+    while move not in '1 2 3 4 5 6 7 8 9'.split() or not isSpaceFree(board, int(move)):
+        print('What is your next move? (1-9)')
+        move = input()
+    return int(move)
+
+def chooseRandomMoveFromList(board, movesList):
+    # Returns a valid move from the passed list on the passed board.
+    # Returns None if there is no valid move.
+    possibleMoves = []
+    for i in movesList:
+        if isSpaceFree(board, i):
+            possibleMoves.append(i)
+
+    if len(possibleMoves) != 0:
+        return random.choice(possibleMoves)
+    else:
+        return None
+
+def getComputerMove(board, computerLetter):
+    # Given a board and the computer's letter, determine where to move and return that move.
+    if computerLetter == 'X':
+        playerLetter = 'O'
+    else:
+        playerLetter = 'X'
+
+    # Here is our algorithm for our Tic Tac Toe AI:
+    # First, check if we can win in the next move
+    for i in range(1, 10):
+        copy = getBoardCopy(board)
+        if isSpaceFree(copy, i):
+            makeMove(copy, computerLetter, i)
+            if isWinner(copy, computerLetter):
+                return i
+
+    # Check if the player could win on his next move, and block them.
+    for i in range(1, 10):
+        copy = getBoardCopy(board)
+        if isSpaceFree(copy, i):
+            makeMove(copy, playerLetter, i)
+            if isWinner(copy, playerLetter):
+                return i
+
+    # Try to take one of the corners, if they are free.
+    move = chooseRandomMoveFromList(board, [1, 3, 7, 9])
+    if move != None:
+        return move
+
+    # Try to take the center, if it is free.
+    if isSpaceFree(board, 5):
+        return 5
+
+    # Move on one of the sides.
+    return chooseRandomMoveFromList(board, [2, 4, 6, 8])
+
+def isBoardFull(board):
+    # Return True if every space on the board has been taken. Otherwise return False.
+    for i in range(1, 10):
+        if isSpaceFree(board, i):
+            return False
+    return True
+
+
+print('Welcome to Tic Tac Toe!')
+
+while True:
+    # Reset the board
+    theBoard = [' '] * 10
+    playerLetter, computerLetter = inputPlayerLetter()
+    turn = whoGoesFirst()
+    print('The ' + turn + ' will go first.')
+    gameIsPlaying = True
+
+    while gameIsPlaying:
+        if turn == 'player':
+            # Player's turn.
+            drawBoard(theBoard)
+            move = getPlayerMove(theBoard)
+            makeMove(theBoard, playerLetter, move)
+
+            if isWinner(theBoard, playerLetter):
+                drawBoard(theBoard)
+                print('Hooray! You have won the game!')
+                gameIsPlaying = False
+            else:
+                if isBoardFull(theBoard):
+                    drawBoard(theBoard)
+                    print('The game is a tie!')
+                    break
+                else:
+                    turn = 'computer'
+
+        else:
+            # Computer's turn.
+            move = getComputerMove(theBoard, computerLetter)
+            makeMove(theBoard, computerLetter, move)
+
+            if isWinner(theBoard, computerLetter):
+                drawBoard(theBoard)
+                print('The computer has beaten you! You lose.')
+                gameIsPlaying = False
+            else:
+                if isBoardFull(theBoard):
+                    drawBoard(theBoard)
+                    print('The game is a tie!')
+                    break
+                else:
+                    turn = 'player'
+
+    if not playAgain():
         break
-
-  def update(self, env):
-    pass
-
-  def update_state_history(self, s):
-    pass
-
-
-# recursive function that will return all
-# possible states (as ints) and who the corresponding winner is for those states (if any)
-# (i, j) refers to the next cell on the board to permute (we need to try -1, 0, 1)
-# impossible games are ignored, i.e. 3x's and 3o's in a row simultaneously
-# since that will never happen in a real game
-def get_state_hash_and_winner(env, i=0, j=0):
-  results = []
-
-  for v in (0, env.x, env.o):
-    env.board[i,j] = v # if empty board it should already be 0
-    if j == 2:
-      # j goes back to 0, increase i, unless i = 2, then we are done
-      if i == 2:
-        # the board is full, collect results and return
-        state = env.get_state()
-        ended = env.game_over(force_recalculate=True)
-        winner = env.winner
-        results.append((state, winner, ended))
-      else:
-        results += get_state_hash_and_winner(env, i + 1, 0)
-    else:
-      # increment j, i stays the same
-      results += get_state_hash_and_winner(env, i, j + 1)
-
-  return results
-
-# play all possible games
-# need to also store if game is over or not
-# because we are going to initialize those values to 0.5
-# NOTE: THIS IS SLOW because MANY possible games lead to the same outcome / state
-# def get_state_hash_and_winner(env, turn='x'):
-#   results = []
-
-#   state = env.get_state()
-#   # board_before = env.board.copy()
-#   ended = env.game_over(force_recalculate=True)
-#   winner = env.winner
-#   results.append((state, winner, ended))
-
-#   # DEBUG
-#   # if ended:
-#   #   if winner is not None and env.win_type.startswith('col'):
-#   #     env.draw_board()
-#   #     print "Winner:", 'x' if winner == -1 else 'o', env.win_type
-#   #     print "\n\n"
-#   #     assert(np.all(board_before == env.board))
-
-#   if not ended:
-#     if turn == 'x':
-#       sym = env.x
-#       next_sym = 'o'
-#     else:
-#       sym = env.o
-#       next_sym = 'x'
-
-#     for i in xrange(LENGTH):
-#       for j in xrange(LENGTH):
-#         if env.is_empty(i, j):
-#           env.board[i,j] = sym
-#           results += get_state_hash_and_winner(env, next_sym)
-#           env.board[i,j] = 0 # reset it
-#   return results
-
-
-def initialV_x(env, state_winner_triples):
-  # initialize state values as follows
-  # if x wins, V(s) = 1
-  # if x loses or draw, V(s) = 0
-  # otherwise, V(s) = 0.5
-  V = np.zeros(env.num_states)
-  for state, winner, ended in state_winner_triples:
-    if ended:
-      if winner == env.x:
-        v = 1
-      else:
-        v = 0
-    else:
-      v = 0.5
-    V[state] = v
-  return V
-
-
-def initialV_o(env, state_winner_triples):
-  # this is (almost) the opposite of initial V for player x
-  # since everywhere where x wins (1), o loses (0)
-  # but a draw is still 0 for o
-  V = np.zeros(env.num_states)
-  for state, winner, ended in state_winner_triples:
-    if ended:
-      if winner == env.o:
-        v = 1
-      else:
-        v = 0
-    else:
-      v = 0.5
-    V[state] = v
-  return V
-
-
-def play_game(p1, p2, env, draw=False):
-  # loops until the game is over
-  current_player = None
-  while not env.game_over():
-    # alternate between players
-    # p1 always starts first
-    if current_player == p1:
-      current_player = p2
-    else:
-      current_player = p1
-
-    # draw the board before the user who wants to see it makes a move
-    if draw:
-      if draw == 1 and current_player == p1:
-        env.draw_board()
-      if draw == 2 and current_player == p2:
-        env.draw_board()
-
-    # current player makes a move
-    current_player.take_action(env)
-
-    # update state histories
-    state = env.get_state()
-    p1.update_state_history(state)
-    p2.update_state_history(state)
-
-  if draw:
-    env.draw_board()
-
-  # do the value function update
-  p1.update(env)
-  p2.update(env)
-
-
-if __name__ == '__main__':
-  # train the agent
-  p1 = Agent()
-  p2 = Agent()
-
-  # set initial V for p1 and p2
-  env = Environment()
-  state_winner_triples = get_state_hash_and_winner(env)
-
-
-  Vx = initialV_x(env, state_winner_triples)
-  p1.setV(Vx)
-  Vo = initialV_o(env, state_winner_triples)
-  p2.setV(Vo)
-
-  # give each player their symbol
-  p1.set_symbol(env.x)
-  p2.set_symbol(env.o)
-
-  T = 50000
-  for t in range(T):
-    if t % 200 == 0:
-      print(t)
-    play_game(p1, p2, Environment())
-
-  # play human vs. agent
-  # do you think the agent learned to play the game well?
-  human = Human()
-  human.set_symbol(env.o)
-  while True:
-    p1.set_verbose(True)
-    play_game(p1, human, Environment(), draw=2)
-    # I made the agent player 1 because I wanted to see if it would
-    # select the center as its starting move. If you want the agent
-    # to go second you can switch the human and AI.
-    answer = input("Play again? [Y/n]: ")
-    if answer and answer.lower()[0] == 'n':
-      break
-
-
-
-
-
-
-
-
-
-
-
